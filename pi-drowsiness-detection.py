@@ -6,12 +6,11 @@ import numpy as np
 from pygame import mixer
 import time, sys
 import requests
+import threading
 
 mixer.init()
 sound = mixer.Sound('alarm.wav')
 
-face = cv2.CascadeClassifier('haar_cascade_files/haarcascade_frontalface_alt.xml')
-leye = cv2.CascadeClassifier('haar_cascade_files/haarcascade_lefteye_2splits.xml')
 reye = cv2.CascadeClassifier('haar_cascade_files/haarcascade_righteye_2splits.xml')
 
 model = load_model('models/cnnCat.h5')
@@ -19,20 +18,27 @@ path = os.getcwd()
 cap = cv2.VideoCapture(0)
 count = 0
 score = 0
-thicc = 5
 rpred = [99]
-lpred = [99]
 deviceCode = "D001"
 requestFlag = 0
+
+def sendRecord():
+    cv2.imwrite(os.path.join(path, 'sleep.jpg'), frame)
+    files = {'image': open('sleep.jpg', 'rb')}
+    r = requests.post('https://dwdw-api-on0.conveyor.cloud/api/Record/SaveRecord', data={
+        "deviceCode": "D001",
+        "type": 3
+    }, files=files)
+    print(r)
 
 while(True):
 
     ret, frame = cap.read()
     height, width = frame.shape[:2]
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    left_eye = leye.detectMultiScale(gray)
     right_eye = reye.detectMultiScale(gray)
-    if len(left_eye) == 0 and len(right_eye) == 0:
+
+    if len(right_eye) == 0:
         score += 1
         requestFlag += 1
     else:
@@ -46,17 +52,7 @@ while(True):
             r_eye = np.expand_dims(r_eye, axis=0)
             rpred = model.predict_classes(r_eye)
             break
-        for (x, y, w, h) in left_eye:
-            l_eye = frame[y:y + h, x:x + w]
-            l_eye = cv2.cvtColor(l_eye, cv2.COLOR_BGR2GRAY)
-            l_eye = cv2.resize(l_eye, (24, 24))
-            l_eye = img_to_array(l_eye)
-            l_eye = l_eye / 255
-            l_eye = l_eye.reshape(24, 24, 1)
-            l_eye = np.expand_dims(l_eye, axis=0)
-            lpred = model.predict_classes(l_eye)
-            break
-        if rpred[0] == 0 and lpred[0] == 0:
+        if rpred[0] == 0:
             score += 1
             requestFlag += 1
         else:
@@ -70,11 +66,10 @@ while(True):
 
     if score == 5:
         try:
-             if requestFlag == 5:
-                 r = requests.get('https://dwdw-api-on0.conveyor.cloud/Test/TestNotify?room=1')
-                 print(r)
-             sound.play()
-             cv2.rectangle(frame, (0, 0), (width, height), (0, 0, 255), thicc)
+            sound.play()
+            if requestFlag == 5:
+                t1 = threading.Thread(target=sendRecord())
+                t1.start()
         except:
             isplaying = False
             pass
