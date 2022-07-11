@@ -1,12 +1,21 @@
 import cv2
 import os
 from keras.models import load_model
-from keras.preprocessing.image import img_to_array
+from tensorflow.keras.utils import img_to_array
 import numpy as np
 from pygame import mixer
 import time, sys
 import requests
 import threading
+import boto3
+import time
+  
+
+
+key = "image"
+bucket = 'datndd-drowsy-bucket'
+path = os.getcwd()
+
 
 mixer.init()
 sound = mixer.Sound('alarm.wav')
@@ -14,7 +23,7 @@ sound = mixer.Sound('alarm.wav')
 reye = cv2.CascadeClassifier('haar_cascade_files/haarcascade_righteye_2splits.xml')
 
 model = load_model('models/cnnCat.h5')
-path = os.getcwd()
+
 cap = cv2.VideoCapture(0)
 count = 0
 score = 0
@@ -24,12 +33,22 @@ requestFlag = 0
 
 def sendRecord():
     cv2.imwrite(os.path.join(path, 'sleep.jpg'), frame)
-    files = {'image': open('sleep.jpg', 'rb')}
-    r = requests.post('https://dwdw-api-on0.conveyor.cloud/api/Record/SaveRecord', data={
-        "deviceCode": "D001",
-        "type": 3
-    }, files=files)
-    print(r)
+    print("send_record to S3")
+    client = boto3.client('s3', region_name='us-east-1')
+    # ts stores the time in seconds
+    ts = time.time()
+    # print the current timestamp
+    file_name = f"sleep_{ts}.jpg"
+    client.upload_file('./sleep.jpg', bucket, file_name)
+    
+    # files = {'image': open('sleep.jpg', 'rb')}
+    # r = requests.post('https://dwdw-api-on0.conveyor.cloud/api/Record/SaveRecord', data={
+    #     "deviceCode": "D001",
+    #     "type": 3
+    # }, files=files)
+    print(f"success send {file_name} to S3!!")
+    print(ts)
+
 
 while(True):
 
@@ -50,7 +69,9 @@ while(True):
             r_eye = r_eye / 255
             r_eye = r_eye.reshape(24, 24, 1)
             r_eye = np.expand_dims(r_eye, axis=0)
-            rpred = model.predict_classes(r_eye)
+            # rpred = model.predict_classes(r_eye)
+            predict_x=model.predict(r_eye) 
+            rpred=np.argmax(predict_x,axis=1)
             break
         if rpred[0] == 0:
             score += 1
@@ -68,8 +89,7 @@ while(True):
         try:
             sound.play()
             if requestFlag == 5:
-                t1 = threading.Thread(target=sendRecord())
-                t1.start()
+                threading.Thread(target=sendRecord, args=()).start()
         except:
             isplaying = False
             pass
